@@ -105,7 +105,7 @@
   };
 
   log('Подключение как ' + clientId);
-  const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', options);
+  const client = mqtt.connect('wss://06493d9e7cfd47e8b07315aecba0157d.s1.eu.hivemq.cloud:8884/mqtt', options);
 
   client.on('connect', () => {
     setStatus('На связи ✓', 'ok');

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Моё мини-приложение</title>
+  <script src="https://web.max.ru/js-bridge/mini-app.js"></script>
+</head>
+<body>
+  <h1>Привет из MAX!</h1>
+  <button id="btn">Показать имя пользователя</button>
+  <p id="out"></p>
+
+  <script>
+    // Инициализация SDK
+    MAX.init();
+
+    document.getElementById('btn').onclick = async () => {
+      const user = await MAX.getUserInfo();
+      document.getElementById('out').textContent =
+        `Привет, ${user.firstName}!`;
+    };
+  </script>
+</body>
+</html>

@@ -6,9 +6,7 @@
   <title>Пульт ESP32</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
-    :root {
-      color-scheme: light dark;
-    }
+    :root { color-scheme: light dark; }
     body {
       font-family: -apple-system, system-ui, sans-serif;
       display: flex; flex-direction: column;
@@ -23,9 +21,9 @@
       background: #f3f4f6;
       color: #374151;
     }
-    #status.ok      { background: #dcfce7; color: #14532d; }
-    #status.warn    { background: #fef3c7; color: #78350f; }
-    #status.err     { background: #fee2e2; color: #7f1d1d; }
+    #status.ok   { background: #dcfce7; color: #14532d; }
+    #status.warn { background: #fef3c7; color: #78350f; }
+    #status.err  { background: #fee2e2; color: #7f1d1d; }
     button {
       padding: 18px 36px; font-size: 18px;
       border: none; border-radius: 14px;
@@ -37,21 +35,22 @@
     button:disabled { opacity: 0.4; cursor: not-allowed; }
     .on  { background: #22c55e; }
     .off { background: #ef4444; }
+    #device {
+      font-size: 13px;
+      color: #6b7280;
+      text-align: center;
+    }
     #log {
       font-family: ui-monospace, monospace;
       font-size: 11px;
       color: #6b7280;
-      max-width: 320px; width: 100%;
-      max-height: 100px; overflow-y: auto;
+      max-width: 340px; width: 100%;
+      max-height: 120px; overflow-y: auto;
       background: #f9fafb;
       border-radius: 8px;
       padding: 8px 10px;
       margin-top: 8px;
       white-space: pre-wrap;
-    }
-    #device {
-      font-size: 12px;
-      color: #6b7280;
     }
   </style>
 </head>
@@ -63,14 +62,26 @@
   <div id="log"></div>
 
 <script>
-  const CMD_TOPIC    = 'led-max-mvp/deka552/led/command';
-  const STATUS_TOPIC = 'led-max-mvp/deka552/led/status';
+  // ===== НАСТРОЙКИ =====
+  const BROKER_URL   = 'wss://06493d9e7cfd47e8b07315aecba0157d.s1.eu.hivemq.cloud:8884/mqtt';
+  const MQTT_USER    = 'max';   // ← сюда логин из HiveMQ Cloud
+  const MQTT_PASS    = 'led12345';   // ← сюда пароль
 
+  const DEVICE_ROOT  = 'led-max-mvp/deka552';
+  const CMD_TOPIC    = DEVICE_ROOT + '/led/command';
+  const STATUS_TOPIC = DEVICE_ROOT + '/led/status';
+  const STATUS_WILD  = DEVICE_ROOT + '/#';        // подписываемся на всё поддерево — на всякий случай
+
+  const OFFLINE_MS   = 45000;                     // 45 сек без статуса → офлайн
+
+  // ===== UI =====
   const $status = document.getElementById('status');
   const $btnOn  = document.getElementById('btn-on');
   const $btnOff = document.getElementById('btn-off');
   const $log    = document.getElementById('log');
   const $dev    = document.getElementById('dev-state');
+
+  let lastStatusAt = 0;
 
   function log(msg) {
     const t = new Date().toLocaleTimeString();
@@ -88,7 +99,14 @@
     $btnOff.disabled = !online;
   }
 
-  // Стабильный Client ID — сохраняем в localStorage, чтобы не плодить сессии
+  function setDevice(text, online) {
+    $dev.textContent = text;
+    $dev.style.color = online ? '#16a34a' : '#dc2626';
+    $dev.style.fontWeight = online ? '600' : '400';
+  }
+  setDevice('—', false);
+
+  // Стабильный Client ID — не плодим сессии в HiveMQ
   let clientId = localStorage.getItem('mqtt_client_id');
   if (!clientId) {
     clientId = 'web-' + Math.random().toString(16).slice(2, 10);
@@ -97,23 +115,24 @@
 
   const options = {
     clientId: clientId,
+    username: MQTT_USER,
+    password: MQTT_PASS,
     clean: true,
-    keepalive: 20,               // раз в 20 сек — пинг брокеру
-    reconnectPeriod: 2000,       // переподключение каждые 2 сек при обрыве
-    connectTimeout: 10000,       // 10 сек на первое соединение
-    protocolVersion: 4,          // MQTT 3.1.1 — самый совместимый
+    keepalive: 20,
+    reconnectPeriod: 2000,
+    connectTimeout: 10000,
+    protocolVersion: 4,
   };
 
   log('Подключение как ' + clientId);
-  const client = mqtt.connect('wss://06493d9e7cfd47e8b07315aecba0157d.s1.eu.hivemq.cloud:8884/mqtt', options);
+  const client = mqtt.connect(BROKER_URL, options);
 
   client.on('connect', () => {
     setStatus('На связи ✓', 'ok');
     log('MQTT connected');
-    // Подписываемся на статус устройства — увидим, что ESP32 живая
-    client.subscribe(STATUS_TOPIC, { qos: 1 }, (err) => {
+    client.subscribe(STATUS_WILD, { qos: 1 }, (err) => {
       if (err) log('subscribe error: ' + err.message);
-      else log('subscribed to status');
+      else log('subscribed to ' + STATUS_WILD);
     });
   });
 
@@ -128,7 +147,6 @@
   });
 
   client.on('close', () => {
-    setStatus('Соединение закрыто', 'warn');
     log('close');
   });
 
@@ -140,21 +158,40 @@
   client.on('message', (topic, payload) => {
     const msg = payload.toString();
     log('← ' + topic + ': ' + msg);
-    if (topic === STATUS_TOPIC) {
-      try {
-        const j = JSON.parse(msg);
-        if (j.state === 'offline') {
-          $dev.textContent = 'офлайн';
-        } else if (j.led) {
-          $dev.textContent = 'LED ' + j.led + (typeof j.rssi === 'number' ? ' (RSSI ' + j.rssi + ')' : '');
-        }
-      } catch (e) {
-        $dev.textContent = msg;
+
+    // Обрабатываем всё, что прилетело в статус-топик
+    if (topic !== STATUS_TOPIC) return;
+
+    try {
+      const j = JSON.parse(msg);
+
+      // LWT-сообщение
+      if (j.state === 'offline') {
+        setDevice('офлайн', false);
+        return;
       }
+
+      // Обычный heartbeat
+      if (j.led) {
+        lastStatusAt = Date.now();
+        const rssi = (typeof j.rssi === 'number') ? ` · RSSI ${j.rssi}` : '';
+        const up   = (typeof j.uptime === 'number') ? ` · ${j.uptime}s` : '';
+        setDevice(`онлайн · LED ${j.led}${rssi}${up}`, true);
+      }
+    } catch (e) {
+      // Не JSON — просто покажем как есть
+      $dev.textContent = msg;
     }
   });
 
-  // Отправка с QoS 1 и callback'ом — узнаём, ушло ли
+  // Каждые 5 сек проверяем свежесть статуса
+  setInterval(() => {
+    if (lastStatusAt && Date.now() - lastStatusAt > OFFLINE_MS) {
+      setDevice('офлайн (нет heartbeat)', false);
+    }
+  }, 5000);
+
+  // Отправка с QoS 1 и callback'ом — увидим, ушло ли
   function send(cmd) {
     if (!client.connected) {
       log('cannot send "' + cmd + '" — offline');
@@ -170,7 +207,7 @@
   $btnOn.addEventListener('click',  () => send('on'));
   $btnOff.addEventListener('click', () => send('off'));
 
-  // Если MAX/браузер заморозил вкладку и она "проснулась" — форсируем reconnect
+  // Если MAX/браузер заморозил вкладку и она проснулась — форсируем reconnect
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       log('page visible again');

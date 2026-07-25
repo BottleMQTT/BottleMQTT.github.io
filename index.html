@@ -6,41 +6,180 @@
   <title>Пульт ESP32</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
+    :root {
+      color-scheme: light dark;
+    }
     body {
-      font-family: system-ui, sans-serif;
+      font-family: -apple-system, system-ui, sans-serif;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      height: 100vh; margin: 0; gap: 16px;
+      min-height: 100vh; margin: 0; gap: 14px;
+      padding: 20px; box-sizing: border-box;
     }
+    #status {
+      font-size: 15px;
+      padding: 8px 14px;
+      border-radius: 10px;
+      background: #f3f4f6;
+      color: #374151;
+    }
+    #status.ok      { background: #dcfce7; color: #14532d; }
+    #status.warn    { background: #fef3c7; color: #78350f; }
+    #status.err     { background: #fee2e2; color: #7f1d1d; }
     button {
-      padding: 16px 32px; font-size: 18px;
-      border: none; border-radius: 12px;
-      color: white; cursor: pointer; min-width: 160px;
+      padding: 18px 36px; font-size: 18px;
+      border: none; border-radius: 14px;
+      color: white; cursor: pointer; min-width: 180px;
+      transition: transform 0.05s, opacity 0.2s;
+      -webkit-tap-highlight-color: transparent;
     }
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
     .on  { background: #22c55e; }
     .off { background: #ef4444; }
-    #status { color: #666; font-size: 14px; }
+    #log {
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      color: #6b7280;
+      max-width: 320px; width: 100%;
+      max-height: 100px; overflow-y: auto;
+      background: #f9fafb;
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-top: 8px;
+      white-space: pre-wrap;
+    }
+    #device {
+      font-size: 12px;
+      color: #6b7280;
+    }
   </style>
 </head>
 <body>
   <div id="status">Подключение…</div>
-  <button class="on"  onclick="send('on')">Включить 💡</button>
-  <button class="off" onclick="send('off')">Выключить</button>
+  <button id="btn-on"  class="on"  disabled>Включить 💡</button>
+  <button id="btn-off" class="off" disabled>Выключить</button>
+  <div id="device">Устройство: <span id="dev-state">—</span></div>
+  <div id="log"></div>
 
-  <script>
-    const topic = 'bottle/xyz123/led';  // ТОТ ЖЕ, что в прошивке
-    const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+<script>
+  const CMD_TOPIC    = 'bottle/xyz123/led';
+  const STATUS_TOPIC = 'bottle/xyz123/status';
 
-    client.on('connect', () => {
-      document.getElementById('status').textContent = 'На связи ✓';
-    });
-    client.on('error', e => {
-      document.getElementById('status').textContent = 'Ошибка: ' + e.message;
-    });
+  const $status = document.getElementById('status');
+  const $btnOn  = document.getElementById('btn-on');
+  const $btnOff = document.getElementById('btn-off');
+  const $log    = document.getElementById('log');
+  const $dev    = document.getElementById('dev-state');
 
-    function send(cmd) {
-      client.publish(topic, cmd);
+  function log(msg) {
+    const t = new Date().toLocaleTimeString();
+    $log.textContent = `[${t}] ${msg}\n` + $log.textContent;
+    if ($log.textContent.length > 3000) {
+      $log.textContent = $log.textContent.slice(0, 3000);
     }
-  </script>
+  }
+
+  function setStatus(text, cls) {
+    $status.textContent = text;
+    $status.className = cls || '';
+    const online = (cls === 'ok');
+    $btnOn.disabled  = !online;
+    $btnOff.disabled = !online;
+  }
+
+  // Стабильный Client ID — сохраняем в localStorage, чтобы не плодить сессии
+  let clientId = localStorage.getItem('mqtt_client_id');
+  if (!clientId) {
+    clientId = 'web-' + Math.random().toString(16).slice(2, 10);
+    try { localStorage.setItem('mqtt_client_id', clientId); } catch (e) {}
+  }
+
+  const options = {
+    clientId: clientId,
+    clean: true,
+    keepalive: 20,               // раз в 20 сек — пинг брокеру
+    reconnectPeriod: 2000,       // переподключение каждые 2 сек при обрыве
+    connectTimeout: 10000,       // 10 сек на первое соединение
+    protocolVersion: 4,          // MQTT 3.1.1 — самый совместимый
+  };
+
+  log('Подключение как ' + clientId);
+  const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', options);
+
+  client.on('connect', () => {
+    setStatus('На связи ✓', 'ok');
+    log('MQTT connected');
+    // Подписываемся на статус устройства — увидим, что ESP32 живая
+    client.subscribe(STATUS_TOPIC, { qos: 1 }, (err) => {
+      if (err) log('subscribe error: ' + err.message);
+      else log('subscribed to status');
+    });
+  });
+
+  client.on('reconnect', () => {
+    setStatus('Переподключение…', 'warn');
+    log('reconnecting…');
+  });
+
+  client.on('offline', () => {
+    setStatus('Нет связи — жду…', 'warn');
+    log('offline');
+  });
+
+  client.on('close', () => {
+    setStatus('Соединение закрыто', 'warn');
+    log('close');
+  });
+
+  client.on('error', (e) => {
+    setStatus('Ошибка: ' + e.message, 'err');
+    log('error: ' + e.message);
+  });
+
+  client.on('message', (topic, payload) => {
+    const msg = payload.toString();
+    log('← ' + topic + ': ' + msg);
+    if (topic === STATUS_TOPIC) {
+      try {
+        const j = JSON.parse(msg);
+        if (j.state === 'offline') {
+          $dev.textContent = 'офлайн';
+        } else if (j.led) {
+          $dev.textContent = 'LED ' + j.led + (typeof j.rssi === 'number' ? ' (RSSI ' + j.rssi + ')' : '');
+        }
+      } catch (e) {
+        $dev.textContent = msg;
+      }
+    }
+  });
+
+  // Отправка с QoS 1 и callback'ом — узнаём, ушло ли
+  function send(cmd) {
+    if (!client.connected) {
+      log('cannot send "' + cmd + '" — offline');
+      setStatus('Нет связи — команда не ушла', 'err');
+      return;
+    }
+    client.publish(CMD_TOPIC, cmd, { qos: 1 }, (err) => {
+      if (err) log('publish error: ' + err.message);
+      else log('→ ' + CMD_TOPIC + ': ' + cmd);
+    });
+  }
+
+  $btnOn.addEventListener('click',  () => send('on'));
+  $btnOff.addEventListener('click', () => send('off'));
+
+  // Если MAX/браузер заморозил вкладку и она "проснулась" — форсируем reconnect
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      log('page visible again');
+      if (!client.connected) {
+        log('forcing reconnect');
+        client.reconnect();
+      }
+    }
+  });
+</script>
 </body>
 </html>

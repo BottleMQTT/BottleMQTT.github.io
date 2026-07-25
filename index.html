@@ -2,24 +2,45 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Моё мини-приложение</title>
-  <script src="https://web.max.ru/js-bridge/mini-app.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Пульт ESP32</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      height: 100vh; margin: 0; gap: 16px;
+    }
+    button {
+      padding: 16px 32px; font-size: 18px;
+      border: none; border-radius: 12px;
+      color: white; cursor: pointer; min-width: 160px;
+    }
+    .on  { background: #22c55e; }
+    .off { background: #ef4444; }
+    #status { color: #666; font-size: 14px; }
+  </style>
 </head>
 <body>
-  <h1>Привет из MAX!</h1>
-  <button id="btn">Показать имя пользователя</button>
-  <p id="out"></p>
+  <div id="status">Подключение…</div>
+  <button class="on"  onclick="send('on')">Включить 💡</button>
+  <button class="off" onclick="send('off')">Выключить</button>
 
   <script>
-    // Инициализация SDK
-    MAX.init();
+    const topic = 'bottle/xyz123/led';  // ТОТ ЖЕ, что в прошивке
+    const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
 
-    document.getElementById('btn').onclick = async () => {
-      const user = await MAX.getUserInfo();
-      document.getElementById('out').textContent =
-        `Привет, ${user.firstName}!`;
-    };
+    client.on('connect', () => {
+      document.getElementById('status').textContent = 'На связи ✓';
+    });
+    client.on('error', e => {
+      document.getElementById('status').textContent = 'Ошибка: ' + e.message;
+    });
+
+    function send(cmd) {
+      client.publish(topic, cmd);
+    }
   </script>
 </body>
 </html>

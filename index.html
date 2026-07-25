@@ -193,16 +193,17 @@
 
   // Отправка с QoS 1 и callback'ом — увидим, ушло ли
   function send(cmd) {
-    if (!client.connected) {
-      log('cannot send "' + cmd + '" — offline');
-      setStatus('Нет связи — команда не ушла', 'err');
-      return;
-    }
-    client.publish(CMD_TOPIC, cmd, { qos: 1 }, (err) => {
-      if (err) log('publish error: ' + err.message);
-      else log('→ ' + CMD_TOPIC + ': ' + cmd);
-    });
+  if (!client.connected) {
+    log('cannot send "' + cmd + '" — offline');
+    setStatus('Нет связи — команда не ушла', 'err');
+    return;
   }
+  client.publish(CMD_TOPIC, cmd, { qos: 1, retain: true }, (err) => {
+  //                                        ^^^^^^^^^^^^  ← добавь это
+    if (err) log('publish error: ' + err.message);
+    else log('→ ' + CMD_TOPIC + ': ' + cmd + ' (retained)');
+  });
+}
 
   $btnOn.addEventListener('click',  () => send('on'));
   $btnOff.addEventListener('click', () => send('off'));

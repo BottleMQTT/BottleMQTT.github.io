@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>💡 BottleLED — оплата 1 ₽ включает светодиод</title>
+  <title>💧 Родниковая вода 19 л — оплата 2000 ₽</title>
   <style>
     :root { color-scheme: light dark; }
     * { box-sizing: border-box; }
@@ -109,38 +109,38 @@
 <div class="container">
 
   <header>
-    <h1>💡 BottleLED</h1>
-    <p>Оплата 1&nbsp;₽ включает светодиод на устройстве на 3 секунды</p>
+    <h1>💧 Родниковая вода 19 л</h1>
+    <p>Оплата 2000&nbsp;₽ — покупка родниковой воды 19&nbsp;л</p>
   </header>
 
   <div class="pay-block">
     <div id="status">Готово к оплате</div>
-    <button id="btn-pay">Оплатить 100 ₽</button>
+    <button id="btn-pay">Оплатить 2000 ₽</button>
     <div id="log"></div>
   </div>
 
   <section>
-    <h2>Что вы получаете за 1 ₽</h2>
-    <p>После оплаты 100 рублей через ЮKassa устройство (светодиодный индикатор) автоматически включается на 3 секунды.</p>
-    <p><strong>Стоимость:</strong> 100 рублей за одно включение.</p>
-    <p><strong>Форма оказания услуги:</strong> цифровая, моментально после подтверждения оплаты.</p>
-    <p><strong>Формат получения:</strong> активация IoT-устройства через сеть Интернет по протоколу MQTT. Дополнительная доставка и физическая передача не требуются — услуга оказывается дистанционно.</p>
+    <h2>Что вы получаете за 2000 ₽</h2>
+    <p>После оплаты 2000 рублей через ЮKassa оформляется покупка родниковой воды объёмом 19 литров.</p>
+    <p><strong>Назначение платежа:</strong> покупка родниковой воды 19 л.</p>
+    <p><strong>Стоимость:</strong> 2000 рублей за 19&nbsp;л родниковой воды.</p>
+    <p><strong>Форма оказания услуги:</strong> моментально после подтверждения оплаты.</p>
   </section>
 
   <section>
     <h2>Как это работает</h2>
     <ol style="padding-left: 20px; font-size: 14px; color: #374151;">
-      <li>Нажимаете кнопку «Оплатить 1&nbsp;₽».</li>
-      <li>Оплачиваете 100 рублей через защищённую страницу ЮKassa (карта, СБП и др.).</li>
-      <li>После подтверждения оплаты сервис отправляет команду на устройство.</li>
-      <li>Светодиод горит 3 секунды и автоматически выключается.</li>
+      <li>Нажимаете кнопку «Оплатить 2000&nbsp;₽».</li>
+      <li>Оплачиваете 2000 рублей через защищённую страницу ЮKassa (карта, СБП и др.).</li>
+      <li>После подтверждения оплаты сервис фиксирует заказ на 19&nbsp;л родниковой воды.</li>
+      <li>Заказ считается подтверждённым и готовым к обработке.</li>
     </ol>
   </section>
 
   <section>
     <h2>Условия возврата</h2>
-    <p>Услуга оказывается моментально в цифровом виде, поэтому возврат оплаты за успешно выполненное включение не производится.</p>
-    <p>Если по техническим причинам светодиод не включился в течение 60 секунд после оплаты — напишите на <a href="mailto:deka552@gmail.com">deka552@gmail.com</a>, и мы вернём деньги в течение 3 рабочих дней.</p>
+    <p>Услуга оказывается моментально в цифровом виде, поэтому возврат оплаты за успешно выполненный заказ не производится.</p>
+    <p>Если по техническим причинам заказ не был подтверждён в течение 60 секунд после оплаты — напишите на <a href="mailto:deka552@gmail.com">deka552@gmail.com</a>, и мы вернём деньги в течение 3 рабочих дней.</p>
   </section>
 
   <section>
@@ -170,6 +170,8 @@
   const API_URL = 'https://api.bottlemqtt.ru';
   const POLL_INTERVAL_MS = 1000;
   const POLL_TIMEOUT_MS  = 90000;
+  const PAYMENT_DESCRIPTION = 'покупка родниковой воды 19 л';
+  const AMOUNT_RUB = 2000;
 
   const $status = document.getElementById('status');
   const $btn    = document.getElementById('btn-pay');
@@ -188,14 +190,14 @@
   function setStatus(text, cls) { $status.textContent = text; $status.className = cls || ''; }
   function setBusy(busy, label) {
     $btn.disabled = busy;
-    $btn.textContent = label || 'Оплатить 1 ₽';
+    $btn.textContent = label || 'Оплатить 2000 ₽';
   }
 
   async function createOrder() {
     log('POST /orders');
     const resp = await fetch(API_URL + '/orders', {
       method: 'POST', headers: API_HEADERS,
-      body: JSON.stringify({ amount_rub: 1 }),
+      body: JSON.stringify({ amount_rub: AMOUNT_RUB, description: PAYMENT_DESCRIPTION }),
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status + ': ' + await resp.text());
     const order = await resp.json();
@@ -237,7 +239,7 @@
       catch (e) { log('poll error: ' + e.message); continue; }
       log('status: ' + last.status);
       if (last.status === 'command_sent' || last.status === 'completed') {
-        setStatus('✓ Оплачено — светодиод горит!', 'ok');
+        setStatus('✓ Оплачено — заказ на воду подтверждён!', 'ok');
         setBusy(true, 'Готово');
         setTimeout(() => { setBusy(false); setStatus('Готово к следующей оплате', ''); }, 4000);
         return;
